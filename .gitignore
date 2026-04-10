@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+.venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 项目特定
+vector_db/
+*.vector_db-512
+*.vector_db-768
+*.vector_db-768-combined
+parent_cache.json
+logs/
+*.log
+.env
+*.db
+*.sqlite3
+data/
+deploy/redis/data/
+# 模型文件（如果太大）
+models/
+
+# 临时文件
+*.tmp
+.DS_Store
