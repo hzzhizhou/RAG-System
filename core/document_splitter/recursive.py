@@ -31,7 +31,6 @@ class RecursiveChunker():
         for chunk in structure_chunks:
             if len(chunk.page_content) > self.chunk_size:
                 sub_chunks = self.text_splitter.split_documents([chunk])
-                log.info(type(sub_chunks))
                 final_chunks.extend(sub_chunks)
             else:
                 final_chunks.append(chunk)

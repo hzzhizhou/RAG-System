@@ -11,7 +11,7 @@ load_dotenv()
 # 项目路径配置
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"  # 原始文档目录
-VECTOR_DB_DIR = BASE_DIR / "vector_db-768"   # 向量库存储目录
+VECTOR_DB_DIR = BASE_DIR / "vector_db-768-combined"   # 向量库存储目录
 LOG_DIR = BASE_DIR / "logs"              # 日志目录
 BACKUP_DIR = BASE_DIR / "backups"        # 备份目录
 
