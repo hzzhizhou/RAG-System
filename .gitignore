@@ -27,7 +27,7 @@ data/
 deploy/redis/data/
 # 模型文件（如果太大）
 models/
-question
+
 # 临时文件
 *.tmp
 .DS_Store
