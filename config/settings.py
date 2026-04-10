@@ -40,8 +40,8 @@ ALLOWED_EXTENSIONS = [".txt", ".pdf", ".docx", ".xlsx",".md"]  # 允许的文件
 CHUNKING_STRATEGY = "combined_splitter"  # 可选: recursive, semantic, sliding_window, parent_child,combined_splitter
 # SEMANTIC_EMBEDDING_MODEL= "D:/RAG-Windows/AI大模型与智能体开发/models/bge-small-zh-v1.5"
 SEMANTIC_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge-base-zh-v1.5"#--768维
-SEMANTIC_CHUNK_THRESHOLD = 0.6   # 句子相似度阈值（低于则切分）
-SEMANTIC_BUFFER_SIZE = 1           # 切分时前后保留的句子数
+SEMANTIC_CHUNK_THRESHOLD = 0.75   # 句子相似度阈值（低于则切分）
+SEMANTIC_BUFFER_SIZE = 2           # 切分时前后保留的句子数
 
 # 滑动窗口分块参数
 SLIDING_WINDOW_STEP = 256          # 滑动步长（若未设置，则使用 CHUNK_SIZE - CHUNK_OVERLAP）
@@ -54,13 +54,13 @@ CHILD_CHUNK_OVERLAP = 40           # 子块重叠
 
 
 # 检索层配置
-RETRIEVER_K = 5                # 检索返回数量
+RETRIEVER_K = 10                # 检索返回数量
 BM25_WEIGHT = 0.4              # 混合检索BM25权重
 BM25_SCORE_THRESHOLD = 0.1      #阙值过滤
 
 VECTOR_WEIGHT = 0.6            # 混合检索向量权重
 ROUTE_MODE = "rule"            # 路由模式：rule/llm/hybrid
-RERANK_TOP_N = 3
+RERANK_TOP_N = 5
 RERANK_MODE = "score"
 
 

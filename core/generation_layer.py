@@ -11,6 +11,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.chat_models.tongyi import ChatTongyi
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
+from utils.context_fromat import format_context_with_parents
 from utils.thread_pool_manager import init_thread_pools
 from core.retriever_layer import RetrievalService
 from infrastructure.vector_store.async_chroma_vector import ChromaVector
@@ -58,51 +59,11 @@ class AnswerGenerator:
             log.warning("未找到 parent_cache.json，父子分块功能不可用")
 
     def format_context(self, docs: List[Document]) -> str:
-        if not docs:
-            return "无参考资料"
-        # 1. 分离父子分块的子块和普通文档
-        parent_scores = {}  # {parent_id: {"score": float, "doc": Document (任意子块)}}
-        normal_docs = []
-        
-        for doc in docs:
-            # 优先使用 fusion_score（重排序后的分数），其次使用 rerank_score，最后使用 vector_score
-            score = doc.metadata.get("fusion_score") or doc.metadata.get("rerank_score") or doc.metadata.get("vector_score", 0.0)
-            parent_id = doc.metadata.get("parent_id")
-            if parent_id and parent_id in self.parent_cache:
-                if parent_id not in parent_scores:
-                    parent_scores[parent_id] = {"score": score, "doc": doc}
-                else:
-                    # 取最高分（也可取平均分）
-                    parent_scores[parent_id]["score"] = max(parent_scores[parent_id]["score"], score)
-            else:
-                normal_docs.append(doc)
-        
-        # 2. 按父块分数排序
-        sorted_parents = sorted(parent_scores.items(), key=lambda x: x[1]["score"], reverse=True)
-        
-        # 3. 构建上下文
-        context_parts = []
-        for parent_id, info in sorted_parents:
-            parent_content = self.parent_cache[parent_id]
-            file_name = info["doc"].metadata.get("file_name", "未知文档")
-            if "\\" in file_name or "/" in file_name:
-                file_name = Path(file_name).name
-            context_parts.append(f"来源：{file_name},id:{parent_id},{parent_content}")
-        
-        # 4. 添加普通文档（无 parent_id 或缓存缺失）
-        for idx, doc in enumerate(normal_docs):
-            file_name = doc.metadata.get("file_name", f"未知文档_{idx}")
-            if "\\" in file_name or "/" in file_name:
-                file_name = Path(file_name).name
-            context_parts.append(f"来源：{file_name}】{doc.page_content}")
-        
-        full_context = "\n\n".join(context_parts)
-        # 可选：截断过长上下文
-        if len(full_context) > 4000:
-            log.warning(f"上下文过长 ({len(full_context)} 字符)，截断至 4000")
-            full_context = full_context[:4000]
-        print(full_context)
-        return full_context
+        return format_context_with_parents(
+            docs=docs,
+            parent_cache=self.parent_cache,
+            max_context_length=4000
+        )
 
     async def stream_generate(self, question: str, docs: List[Document], session_id: Optional[str] = None) -> AsyncIterator[str]:
         """

@@ -11,11 +11,11 @@ from langchain_community.document_loaders import (
 )
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from config.settings import CHUNKING_STRATEGY
+from config.settings import BASE_DIR, CHUNKING_STRATEGY
 from core.document_splitter.splitter_factory import get_chunker
 from logs.log_config import data_layer_log as log
 
-BASE_DIR = Path(__file__).parent.parent
+
 MAX_FILE_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = [".txt", ".pdf", ".docx", ".xlsx", ".md"]
 THREAD_POOL = ThreadPoolExecutor(max_workers=8)
