@@ -14,6 +14,7 @@ DATA_DIR = BASE_DIR / "data"  # 原始文档目录
 VECTOR_DB_DIR = BASE_DIR / "vector_db-768-combined"   # 向量库存储目录
 LOG_DIR = BASE_DIR / "logs"              # 日志目录
 BACKUP_DIR = BASE_DIR / "backups"        # 备份目录
+STOP_WORDS = BASE_DIR / "config"/"stop_words.txt"
 
 # LLM/嵌入模型配置（企业级版本锁定）
 LLM_MODEL = "qwen3-max"#换更快的模型：qwen-turbo 比 qwen3-max 快很多，效果差异不大。
@@ -24,7 +25,7 @@ LLM_SEED = 42        # 固定随机种子（结果稳定）
 # ====================== 嵌入模型配置 ======================
 EMBEDDING_BACKEND = "local"        # "local" 或 "dashscope"
 # LOCAL_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge-small-zh-v1.5"#---512维
-LOCAL_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge-base-zh-v1.5"#--768维
+LOCAL_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge-base-zh-v1.5"#--768维,本地下载的模型地址
 # 云端模型（仅当 EMBEDDING_BACKEND="dashscope" 时使用）
 DASHSCOPE_EMBEDDING_MODEL = "text-embedding-v1"
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")  # 从.env读取
@@ -118,16 +119,13 @@ CPU_CORES = multiprocessing.cpu_count()
 # BM25_THREAD_POOL_SIZE 设置为 CPU 核心数的两倍，
 # 适合 CPU 密集型检索（BM25 算法多线程并发），
 # 通常这样可以充分利用多核资源，但避免线程过多导致频繁上下文切换。
-BM25_THREAD_POOL_SIZE = CPU_CORES * 4
+BM25_THREAD_POOL_SIZE = CPU_CORES 
 BM25_THREAD_POOL_NAME = "bm25-retriever-pool"
 BM25_ASYNC_TIMEOUT = 10
 
 # 向量检索（IO密集）
-VECTOR_THREAD_POOL_SIZE = CPU_CORES * 8
+VECTOR_THREAD_POOL_SIZE = CPU_CORES * 2
 VECTOR_THREAD_POOL_NAME = "vector-retriever-pool"
 VECTOR_ASYNC_TIMEOUT = 10
 
-# 混合检索（混合密集）
-HYBRID_THREAD_POOL_SIZE = CPU_CORES * 4
-HYBRID_THREAD_POOL_NAME = "hybrid-retriever-pool"
 HYBRID_ASYNC_TIMEOUT = 10

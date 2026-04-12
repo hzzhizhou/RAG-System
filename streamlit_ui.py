@@ -127,7 +127,6 @@ with st.sidebar:
     st.divider()
     st.markdown("### 🗑️ 会话管理")
     if st.button("清空当前会话"):
-        st.session_state.session_id = str(uuid.uuid4())
         st.session_state.messages = []
         st.rerun()
     st.caption(f"当前会话ID: `{st.session_state.session_id[:8]}...`")
@@ -175,30 +174,31 @@ if prompt := st.chat_input("请输入你的问题..."):
         
         try:
             with st.chat_message("assistant"):
-                response = requests.post(stream_url, json=payload, stream=True, timeout=30)
-                if response.status_code == 200:
-                    # 使用生成器逐块输出
-                    def text_generator():
-                        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-                            if chunk:
-                                yield chunk
-                    # st.write_stream 会自动逐字显示并返回完整内容
-                    answer = st.write_stream(text_generator())
-                    
-                    # 可选：显示额外的元数据（流式响应通常不包含，可单独请求）
-                    with st.expander("📊 详细信息"):
-                        st.caption(f"流式响应完成 | 会话: {st.session_state.session_id[:8]}...")
-                else:
-                    # 尝试获取错误信息（非流式）
-                    try:
-                        error_detail = response.json().get("detail", "未知错误")
-                    except:
-                        error_detail = response.text
-                    st.error(f"请求失败 (HTTP {response.status_code}): {error_detail}")
-                    answer = f"❌ 服务出错：{error_detail}"
-            
-            if answer:
-                st.session_state.messages.append({"role": "assistant", "content": answer})
+                with st.spinner("正在思考中..."):
+                    response = requests.post(stream_url, json=payload, stream=True, timeout=30)
+                    if response.status_code == 200:
+                        # 使用生成器逐块输出
+                        def text_generator():
+                            for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                                if chunk:
+                                    yield chunk
+                        # st.write_stream 会自动逐字显示并返回完整内容
+                        answer = st.write_stream(text_generator())
+                        
+                        # 可选：显示额外的元数据（流式响应通常不包含，可单独请求）
+                        with st.expander("📊 详细信息"):
+                            st.caption(f"流式响应完成 | 会话: {st.session_state.session_id[:8]}...")
+                    else:
+                        # 尝试获取错误信息（非流式）
+                        try:
+                            error_detail = response.json().get("detail", "未知错误")
+                        except:
+                            error_detail = response.text
+                        st.error(f"请求失败 (HTTP {response.status_code}): {error_detail}")
+                        answer = f"❌ 服务出错：{error_detail}"
+                
+                if answer:
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
                 
         except requests.exceptions.Timeout:
             st.error("请求超时，请稍后重试。")

@@ -1,8 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from config.settings import (
     BM25_THREAD_POOL_SIZE, BM25_THREAD_POOL_NAME,
-    VECTOR_THREAD_POOL_SIZE, VECTOR_THREAD_POOL_NAME,
-    HYBRID_THREAD_POOL_SIZE, HYBRID_THREAD_POOL_NAME
+    VECTOR_THREAD_POOL_SIZE, VECTOR_THREAD_POOL_NAME
 )
 from logs.log_config import log
 
@@ -21,11 +20,6 @@ def init_thread_pools():
         THREAD_POOLS["vector"] = ThreadPoolExecutor(
             max_workers=VECTOR_THREAD_POOL_SIZE,
             thread_name_prefix=VECTOR_THREAD_POOL_NAME
-        )
-        # 混合检索线程池
-        THREAD_POOLS["hybrid"] = ThreadPoolExecutor(
-            max_workers=HYBRID_THREAD_POOL_SIZE,
-            thread_name_prefix=HYBRID_THREAD_POOL_NAME
         )
         log.info("所有检索线程池初始化完成")
     except Exception as e:

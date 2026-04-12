@@ -59,5 +59,5 @@ def format_context_with_parents(
         full_context = full_context[:max_context_length]
     
     # 可选：保留原有打印调试（可移除或改为日志）
-    print(full_context)
+    log.info(f"{full_context[:200]}")
     return full_context

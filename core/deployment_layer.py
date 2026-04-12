@@ -1,4 +1,3 @@
-# core/deployment_layer.py
 import time
 import hashlib
 import uuid
@@ -56,19 +55,19 @@ class RAGService:
         self.app = FastAPI(title="企业级RAG服务", version="1.0")
         self.cache: Dict[str, RAGResponse] = {}
         self.cache_maxsize = CACHE_MAXSIZE
-        self.agent_executors: Dict[str, object] = {}
+        self.agent: Dict[str, object] = {}
         self._register_routes()
 
-    def _get_agent_executor(self, session_id: str):
+    def _get_agent(self, session_id: str):
         """获取或创建会话专用的 Agent 执行器"""
-        if session_id not in self.agent_executors:
+        if session_id not in self.agent:
             # 创建 Agent 执行器（传入 hybrid_retriever 和 llm）
-            self.agent_executors[session_id] = create_agent_with_memory(
+            self.agent[session_id] = create_agent_with_memory(
                 hybrid_retriever=self.hybrid_retriever,
                 llm=self.llm
             )
             log.info(f"为会话 [{session_id}] 创建 Agent 执行器")
-        return self.agent_executors[session_id]
+        return self.agent[session_id]
     def _store_history(self, session_id: str, question: str, answer: str):
             """后台任务：存储对话历史到 Redis"""
             try:
@@ -111,17 +110,9 @@ class RAGService:
                     docs=docs,
                     session_id=session_id
                 )
-                # chunks = [
-                #     {
-                #         "chunk": doc.page_content[:200] + "...",
-                #         "file_name": doc.metadata.get("file_name", "unknown"),
-                #         "chunk_id": doc.metadata.get("chunk_id", "")
-                #     } for doc in docs
-                # ]
                 response = RAGResponse(
                     answer=answer,
                     retriever_type=retriever_type,
-                    # context_chunks=chunks,
                     response_time=round(time.time() - start_time, 2),
                     session_id=session_id
                 )
@@ -179,7 +170,6 @@ class RAGService:
                 log.error(f"流式 RAG 处理失败: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail="服务内部错误")
 
-
         # ========== Agent 路由 ==========
         @self.app.post("/agent/query", response_model=AgentResponse)
         async def agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
@@ -190,25 +180,29 @@ class RAGService:
             session_id = request.session_id or str(uuid.uuid4())
             start_time = time.time()
             try:
-                # 获取 Agent 执行器
-                agent_executor = self._get_agent_executor(session_id)
-                # 获取对话历史（用于填充 prompt）
+                # 获取 Agent（注意：_get_agent_executor 实际返回的是 agent，不是 executor）
+                agent = self._get_agent(session_id)
+                
+                # 获取对话历史
                 chat_history = init_chat_history(session_id)
                 history_messages = chat_history.messages()
-                # 格式化历史为字符串（最近6条）
-                history_str = ""
+                
+                # 构建消息列表（格式：[(role, content), ...]）
+                messages = []
+                # 添加历史消息（最近6条）
                 for msg in history_messages[-6:]:
-                    role = "用户" if isinstance(msg, HumanMessage) else "助手"
-                    history_str += f"{role}：{msg.content}\n"
-
-                # 同步执行 Agent（使用线程池避免阻塞事件循环）
-                def run_agent():
-                    return agent_executor.invoke({
-                        "input": request.question,
-                        "chat_history": history_str
-                    })
-                result = await asyncio.to_thread(run_agent)
-                answer = result["output"]
+                    if isinstance(msg, HumanMessage):
+                        messages.append(("user", msg.content))
+                    elif isinstance(msg, AIMessage):
+                        messages.append(("assistant", msg.content))
+                # 添加当前用户问题
+                messages.append(("user", request.question))
+                
+                # 异步调用 agent
+                result = await agent.ainvoke({"messages": messages})
+                # 提取最后一条 AI 消息作为答案
+                answer = result["messages"][-1].content
+                
                 elapsed = round(time.time() - start_time, 2)
 
                 # 存储用户问题和助手回答到历史（后台任务）

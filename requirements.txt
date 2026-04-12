@@ -1,0 +1,55 @@
+# LLM & LangChain
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langchain-chroma
+langchain-text-splitters
+
+# RAG：向量库与嵌入
+chromadb
+pymilvus
+faiss-cpu
+sentence-transformers
+pypdf
+docx2txt
+unstructured
+
+# 通义 / DashScope（
+dashscope
+
+# 关键词检索与分词
+rank-bm25
+jieba
+
+# 工具
+python-dotenv
+tqdm
+pydantic>=2.6.0
+redis
+httpx
+trafilatura
+python-multipart
+pandas
+
+
+
+# Web / 应用
+flask
+streamlit
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# 评估
+ragas
+datasets
+
+# 深度学习（用于本地嵌入模型，可选）
+transformers
+
+
+# 测试（开发环境）
+pytest
+pytest-asyncio
+pytest-cov
+pytest-mock

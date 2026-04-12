@@ -3,6 +3,7 @@
 """
 import jieba
 from typing import List
+from config.settings import STOP_WORDS
 from logs.log_config import log
 import re
 
@@ -41,7 +42,7 @@ class ChineseTokenizer:
         stop_words = set()
         try:
             # 修正原代码bug：open缺少文件路径参数
-            with open("config/stop_words.txt", "r", encoding="utf-8") as f:
+            with open(STOP_WORDS, "r", encoding="utf-8") as f:
                 for line in f:
                     word = line.strip().lower()  # 停用词统一小写
                     if word:

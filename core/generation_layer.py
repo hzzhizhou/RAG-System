@@ -1,7 +1,5 @@
 """
 生成层：无幻觉生成+提示词工程+格式标准化+复杂问题处理
-企业级优化：单LLM实例复用，差异化参数控制
-核心修改：来源标注从chunk_id改为文档名称（file_name）
 """
 from typing import List, Optional, AsyncIterator
 from pathlib import Path
@@ -35,10 +33,11 @@ class AnswerGenerator:
         self.base_prompt = ChatPromptTemplate.from_messages([
             ("system", """你是一个智能回答助手，严格按照以下要求回答用户问题：
             要求：
-                1. 回答简洁准确，核心内容不超过200字；
-                2. 仅使用提供的资料回答，不添加任何额外信息、推测或编造内容；
-                3. 必须在回答末尾标注信息来源（格式：「来源：文档名」，多个来源用逗号分隔）；
-                4. 无相关资料时，仅回复「无相关信息」。
+                1. 回答简洁准确,核心内容不超过100字;
+                2. 优先使用【对话历史】中的信息回答关于对话上下文的问题（如“上一个问题是什么”）。
+                3. 仅使用资料中的知识回答，不添加额外信息。
+                4. 必须在回答末尾标注信息来源（格式：「来源：文档名」，若来自对话历史则标注「来源：对话历史」）；
+                5. 无相关资料时，仅回复「无相关信息」。
             资料：{context}
             """),
             ("human", "用户问题：{question}")
@@ -72,6 +71,20 @@ class AnswerGenerator:
         """
         start_time = time.time()
         context_str = self.format_context(docs)
+        # 添加对话历史
+        if session_id:
+            chat_hist = init_chat_history(session_id)
+            messages = chat_hist.messages()  # 获取历史消息列表
+            if messages:
+                history_lines = []
+                for msg in messages[-2:]:  # 最近2条消息（1轮对话）
+                    role = "User" if isinstance(msg, HumanMessage) else "AI"
+                    history_lines.append(f"{role}：{msg.content}")
+                if history_lines:
+                    history_str = "\n".join(history_lines)
+                    # 将对话历史拼接到上下文前面
+                    context_str = f"对话历史:\n{history_str}\n\n上下文:\n{context_str}"
+                    print(context_str)
         try:
             async for chunk in self.answer_chain.astream({
                 "question": question,
@@ -95,6 +108,7 @@ class AnswerGenerator:
             chat_history = init_chat_history(session_id)
             chat_history.add_message(HumanMessage(content=question))
             chat_history.add_message(AIMessage(content=answer))
+        print(f"AI回答:\n{answer}")
         return answer
 
 if __name__ =='__main__':
@@ -106,11 +120,10 @@ if __name__ =='__main__':
     llm = ChatTongyi(model=LLM_MODEL, temperature=LLM_TEMPERATURE, seed=LLM_SEED,streaming=True)
 
     retrieval_service = RetrievalService(vector_store, llm, chat_history)
-    question = "P99响应延迟的企业要求是多少"
+    question = "P99响应延迟多少合适"
     docs,retriever_type =asyncio.run( retrieval_service.retrieve(question,use_context=False))
     answer_generator = AnswerGenerator(llm)
 
-    ans =asyncio.run( answer_generator.generate(question,docs))
+    ans =asyncio.run( answer_generator.generate(question,docs,session_id="user_001"))
     end = time.time()-start
     print(f"总耗时:{end}")
-    print(ans)

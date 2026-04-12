@@ -1,11 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-# from pathlib import Path
-# import sys
-# sys.path.append(str(Path(__file__).parent.parent.parent))
 from typing import List, Optional, Tuple
 from modelscope import snapshot_download
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
+from utils.thread_pool_manager import get_thread_pool
 from config.settings import DASHSCOPE_EMBEDDING_MODEL, EMBEDDING_BACKEND, LOCAL_EMBEDDING_MODEL, VECTOR_DB_DIR
 from langchain_community.embeddings import DashScopeEmbeddings,HuggingFaceEmbeddings
 from infrastructure.vector_store.base_store import BaseVectorStore
@@ -17,7 +16,11 @@ class ChromaVector(BaseVectorStore):
         super().__init__()
         self.persist_dir = persist_dir
         # 嵌入模型同步/异步通用
-
+        try:
+            self._executor = get_thread_pool("vector")
+        except:
+            # 若还未初始化，则创建一个默认大小的线程池
+            self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chroma")
         if EMBEDDING_BACKEND == "local":
             model_name = embedding_model or LOCAL_EMBEDDING_MODEL
             log.info(f"初始化本地嵌入模型: {model_name}")
@@ -120,8 +123,8 @@ class ChromaVector(BaseVectorStore):
         for i in range(0, total, batch_size):
             batch = docs[i:i+batch_size]
             try:
-                # 调用同步方法 add_documents，放到默认线程池执行
-                await loop.run_in_executor(None, self.vector_store.add_documents, batch)
+                # 调用同步方法 add_documents，放到线程池执行
+                await loop.run_in_executor(self._executor, self.vector_store.add_documents, batch)
                 log.info(f"【异步】Chroma 入库批次 {i//batch_size + 1}/{(total-1)//batch_size + 1}，共 {len(batch)} 个块")
             except Exception as e:
                 log.error(f"【异步】批次 {i//batch_size + 1} 入库失败: {e}", exc_info=True)
@@ -133,7 +136,7 @@ class ChromaVector(BaseVectorStore):
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(
-                None, 
+                self._executor, 
                 self.vector_store.similarity_search, 
                 query, 
                 k=k, 
@@ -148,7 +151,7 @@ class ChromaVector(BaseVectorStore):
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(
-                None,
+                self._executor,
                 self.vector_store.similarity_search_with_score,
                 query,
                 k=k,
@@ -162,7 +165,7 @@ class ChromaVector(BaseVectorStore):
         """✅ 异步根据预计算向量进行相似度检索（已经正确实现，无需修改）"""
         loop = asyncio.get_running_loop()
         func = partial(self.vector_store.similarity_search_by_vector_with_relevance_scores, embedding, k=k, filter=filter)
-        return await loop.run_in_executor(None, func)
+        return await loop.run_in_executor(self._executor, func)
 
     async def aclear(self) -> None:
         """✅ 异步清空向量库（通过线程池执行同步的 delete_collection）"""
@@ -170,9 +173,9 @@ class ChromaVector(BaseVectorStore):
         try:
             if self.vector_store:
                 # delete_collection 是同步方法，放入线程池
-                await loop.run_in_executor(None, self.vector_store.delete_collection)
+                await loop.run_in_executor(self._executor, self.vector_store.delete_collection)
             # _init_vector 是同步方法，也放入线程池执行（或者直接调用，但为了避免阻塞，也放线程池）
-            await loop.run_in_executor(None, self._init_vector)
+            await loop.run_in_executor(self._executor, self._init_vector)
             log.info("【异步】Chroma 向量库已清空并重建")
         except Exception as e:
             log.error(f"【异步】向量数据库清除失败{e}", exc_info=True)
