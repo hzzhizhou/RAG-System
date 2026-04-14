@@ -2,17 +2,12 @@
 评估层：RAGAS评估+稳定化+指标监控
 规避：评估结果波动、指标无监控问题
 """
-from pathlib import Path
-import sys
 import time
-sys.path.append(str(Path(__file__).parent.parent))
 from utils.thread_pool_manager import init_thread_pools
 import asyncio
 from typing import Dict, List, Optional, Any
-import pandas as pd
 from datetime import datetime
 from ragas import evaluate
-from ragas.llms import llm_factory
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.metrics import (
     faithfulness, answer_relevancy, context_precision, context_recall

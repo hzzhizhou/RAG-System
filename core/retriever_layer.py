@@ -4,9 +4,6 @@
 实现HyDE,重排序
 """
 from functools import partial
-from pathlib import Path
-import sys
-sys.path.append(str(Path(__file__).parent.parent))
 from infrastructure.EmbeddingService.embedding_service import EmbeddingService
 from typing import List, Tuple
 from langchain_core.documents import Document
