@@ -9,7 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_community.chat_models.tongyi import ChatTongyi
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
-from utils.context_fromat import format_context_with_parents
+from utils.context_format import format_context_with_parents
 from utils.thread_pool_manager import init_thread_pools
 from core.retriever_layer import RetrievalService
 from infrastructure.vector_store.async_chroma_vector import ChromaVector
