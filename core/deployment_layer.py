@@ -1,7 +1,7 @@
 import time
 import hashlib
 import uuid
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict,Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
@@ -11,7 +11,9 @@ import os
 from config.settings import API_HOST, API_PORT, CACHE_MAXSIZE, RESPONSE_TIMEOUT, DASHSCOPE_API_KEY
 from logs.log_config import log
 from utils.security import DataSecurity
-from core.agent_layer import create_agent_with_memory
+from core.agent.local_agent import create_agent_with_memory
+from core.agent.web_agent import create_web_agent  
+from core.agent_layer import create_unified_agent
 from core.chat_history_factory import init_chat_history
 from langchain_community.chat_models.tongyi import ChatTongyi
 from fastapi import BackgroundTasks
@@ -55,19 +57,20 @@ class RAGService:
         self.app = FastAPI(title="企业级RAG服务", version="1.0")
         self.cache: Dict[str, RAGResponse] = {}
         self.cache_maxsize = CACHE_MAXSIZE
-        self.agent: Dict[str, object] = {}
-        self._register_routes()
-
+        self.local_agent: Dict[str,Any] = {}   # 原 self.agent 可重命名
+        self.web_agent = create_web_agent(llm)        # 新增
+        self.unified_agent = create_unified_agent(self.hybrid_retriever, llm)
+        self._register_routes() 
     def _get_agent(self, session_id: str):
         """获取或创建会话专用的 Agent 执行器"""
-        if session_id not in self.agent:
+        if session_id not in self.local_agent:
             # 创建 Agent 执行器（传入 hybrid_retriever 和 llm）
-            self.agent[session_id] = create_agent_with_memory(
+            self.local_agent[session_id] = create_agent_with_memory(
                 hybrid_retriever=self.hybrid_retriever,
                 llm=self.llm
             )
             log.info(f"为会话 [{session_id}] 创建 Agent 执行器")
-        return self.agent[session_id]
+        return self.local_agent[session_id]
     def _store_history(self, session_id: str, question: str, answer: str):
             """后台任务：存储对话历史到 Redis"""
             try:
@@ -171,8 +174,8 @@ class RAGService:
                 raise HTTPException(status_code=500, detail="服务内部错误")
 
         # ========== Agent 路由 ==========
-        @self.app.post("/agent/query", response_model=AgentResponse)
-        async def agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
+        @self.app.post("/local_agent", response_model=AgentResponse)
+        async def local_agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
             # 鉴权
             if not DataSecurity.validate_api_key(request.api_key):
                 raise HTTPException(status_code=401, detail="无效的API密钥")
@@ -219,7 +222,72 @@ class RAGService:
             except Exception as e:
                 log.error(f"Agent 处理失败: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail="Agent 服务内部错误")
+        # 新增 Web Agent 路由
+        @self.app.post("/web_agent", response_model=AgentResponse)
+        async def web_agent_query(request: AgentRequest, background_tasks: BackgroundTasks):
+            if not DataSecurity.validate_api_key(request.api_key):
+                raise HTTPException(status_code=401, detail="无效的API密钥")
+            session_id = request.session_id or str(uuid.uuid4())
+            start_time = time.time()
+            try:
+                # 获取对话历史
+                chat_history = init_chat_history(session_id)
+                history_messages = chat_history.messages()
+                messages = []
+                for msg in history_messages[-6:]:
+                    if isinstance(msg, HumanMessage):
+                        messages.append(("user", msg.content))
+                    elif isinstance(msg, AIMessage):
+                        messages.append(("assistant", msg.content))
+                messages.append(("user", request.question))
 
+                result = await self.web_agent.ainvoke({"messages": messages})
+                answer = result["messages"][-1].content
+                elapsed = round(time.time() - start_time, 2)
+
+                # 存储历史
+                background_tasks.add_task(chat_history.add_message, HumanMessage(content=request.question))
+                background_tasks.add_task(chat_history.add_message, AIMessage(content=answer))
+
+                log.info(f"Web Agent 查询完成 | 会话={session_id} | 耗时={elapsed}s")
+                return AgentResponse(answer=answer, response_time=elapsed, session_id=session_id, status="success")
+            except Exception as e:
+                log.error(f"Web Agent 处理失败: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+    
+        @self.app.post("/agent/query", response_model=AgentResponse)
+        async def unified_ask(request: AgentRequest, background_tasks: BackgroundTasks):
+            if not DataSecurity.validate_api_key(request.api_key):
+                raise HTTPException(status_code=401, detail="无效的API密钥")
+            session_id = request.session_id or str(uuid.uuid4())
+            start_time = time.time()
+            try:
+                chat_history = init_chat_history(session_id)
+                history_messages = chat_history.messages()
+                messages = []
+                for msg in history_messages[-6:]:
+                    if isinstance(msg, HumanMessage):
+                        messages.append(("user", msg.content))
+                    elif isinstance(msg, AIMessage):
+                        messages.append(("assistant", msg.content))
+                messages.append(("user", request.question))
+
+                # 调用全能 Agent，设置 recursion_limit 防止无限循环
+                result = await self.unified_agent.ainvoke(
+                    {"messages": messages},
+                    config={"recursion_limit": 10}
+                )
+                answer = result["messages"][-1].content
+                elapsed = round(time.time() - start_time, 2)
+
+                background_tasks.add_task(chat_history.add_message, HumanMessage(content=request.question))
+                background_tasks.add_task(chat_history.add_message, AIMessage(content=answer))
+                log.info(f"回答：{answer}")
+                log.info(f" 查询完成 | 会话={session_id} | 耗时={elapsed}s")
+                return AgentResponse(answer=answer, response_time=elapsed, session_id=session_id, status="success")
+            except Exception as e:
+                log.error(f"Agent 处理失败: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
     # ---------- 缓存辅助方法 ----------
     def _get_cache_key(self, question: str, route_mode: str) -> str:
         q_hash = hashlib.md5(question.encode()).hexdigest()

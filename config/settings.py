@@ -29,7 +29,7 @@ LOCAL_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge
 # 云端模型（仅当 EMBEDDING_BACKEND="dashscope" 时使用）
 DASHSCOPE_EMBEDDING_MODEL = "text-embedding-v1"
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")  # 从.env读取
-
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 # 数据层配置
 CHUNK_SIZE = 768               # 分块大小（适配LLM上下文）
 CHUNK_OVERLAP = 128             # 块重叠（避免上下文丢失）
@@ -97,14 +97,19 @@ LOG_FILE_OUTPUT = True
 
 # Redis配置
 REDIS_CONFIG = {
+    # 原有配置（对话历史）
     "host": "localhost",
     "port": 6379,
-    "password":os.getenv("Redis_password"),
+    "password": os.getenv("Redis_password"),
     "db": 0,
-    "key_prefix": "rag_chat_history:",  # 对话历史存储的key前缀
-    "expire_days": 7,  # 过期天数
-    "socket_timeout": 10,  # 连接超时时间
-    "max_connections": 30  # 连接池最大连接数
+    "key_prefix": "rag_chat_history:",     # 对话历史前缀
+    "expire_days": 7,
+    "socket_timeout": 10,
+    "max_connections": 30,
+    # Web Agent 缓存相关
+    "key_prefix_web": "web_cache:",        # 搜索结果缓存前缀
+    "cache_ttl_search": 3600,
+    "cache_ttl_webpage": 86400
 }
 #对话记忆层配置
 SESSION_ID ="user_001"
