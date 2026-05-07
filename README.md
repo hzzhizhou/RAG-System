@@ -16,6 +16,7 @@
     ├── config/                     # 配置模块（settings.py）
     ├── core/                       # 核心业务逻辑
     │   ├── chunking/               # 5种分块策略
+    |   ├── data_loader/            # 文档加载器
     │   ├── retrieval/              # 检索器、重排序、路由、查询扩展
     │   ├── data_layer.py           # 数据入库
     │   ├── retriever_layer.py      # 检索服务
@@ -28,7 +29,6 @@
     │   ├── vector_store/           # Chroma 异步封装
     │   ├── EmbeddingService/       # 嵌入服务（缓存+异步）
     │   └── redis/                  # Redis 对话历史
-    ├── data_loader/                # 文档加载器（本地/网页）
     ├── utils/                      # 清洗、分词、安全、线程池
     ├── logs/                       # 日志目录
     ├── data/                       # 测试文档
