@@ -11,7 +11,7 @@ load_dotenv()
 # 项目路径配置
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"  # 原始文档目录
-VECTOR_DB_DIR = BASE_DIR / "vector_db-768-combined"   # 向量库存储目录
+VECTOR_DB_DIR = BASE_DIR / "vector_db-sql"   # 向量库存储目录
 LOG_DIR = BASE_DIR / "logs"              # 日志目录
 BACKUP_DIR = BASE_DIR / "backups"        # 备份目录
 STOP_WORDS = BASE_DIR / "config"/"stop_words.txt"
@@ -38,7 +38,7 @@ ALLOWED_EXTENSIONS = [".txt", ".pdf", ".docx", ".xlsx",".md"]  # 允许的文件
 
 
 # ====================== 分块策略配置 ======================
-CHUNKING_STRATEGY = "combined_splitter"  # 可选: recursive, semantic, sliding_window, parent_child,combined_splitter
+CHUNKING_STRATEGY = "recursive"  # 可选: recursive, semantic, sliding_window, parent_child,combined_splitter
 # SEMANTIC_EMBEDDING_MODEL= "D:/RAG-Windows/AI大模型与智能体开发/models/bge-small-zh-v1.5"
 SEMANTIC_EMBEDDING_MODEL = "D:/RAG-Windows/AI大模型与智能体开发/models/bge-base-zh-v1.5"#--768维
 SEMANTIC_CHUNK_THRESHOLD = 0.75   # 句子相似度阈值（低于则切分）
@@ -134,3 +134,12 @@ VECTOR_THREAD_POOL_NAME = "vector-retriever-pool"
 VECTOR_ASYNC_TIMEOUT = 10
 
 HYBRID_ASYNC_TIMEOUT = 10
+
+
+#-----------MySQL配置---------------------
+# MySQL 配置
+MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", 3306))
+MYSQL_USER = os.getenv("MYSQL_USER", "rag_user")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "123456")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "rag_db")

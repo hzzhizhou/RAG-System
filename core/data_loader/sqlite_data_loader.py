@@ -1,17 +1,16 @@
 from pathlib import Path
 from datetime import datetime
-from typing import Set, List
 import sys
 import asyncio
-import json
 from concurrent.futures import ThreadPoolExecutor
 from langchain_core.documents import Document
 from langchain_community.document_loaders import (
     UnstructuredExcelLoader, UnstructuredMarkdownLoader,
     PyPDFLoader, TextLoader, Docx2txtLoader
 )
-
+import hashlib
 sys.path.append(str(Path(__file__).parent.parent.parent))
+from core.state_manager_sql import SQLiteStateManager
 from config.settings import BASE_DIR, CHUNKING_STRATEGY
 from core.document_splitter.splitter_factory import get_chunker
 from logs.log_config import data_layer_log as log
@@ -20,15 +19,22 @@ from logs.log_config import data_layer_log as log
 MAX_FILE_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = [".txt", ".pdf", ".docx", ".xlsx", ".md"]
 THREAD_POOL = ThreadPoolExecutor(max_workers=8)
-from core.state_manager import DocumentStateManager
 
 class StreamDocumentLoader:
-    def __init__(self, state_file: Path = BASE_DIR / "doc_state.json"):
+    def __init__(self, db_path: Path = BASE_DIR / "doc_state.db"):
         # 分块器只创建一次，所有文件共用
         self.splitter = get_chunker(CHUNKING_STRATEGY)
         # 父块映射累积（如果是组合分块）
         self.accumulated_parent_map = {}
-        self.state_mgr = DocumentStateManager(state_file)
+        self.state_mgr = SQLiteStateManager(db_path)
+
+    # 静态方法生成 chunk_id（与向量库中的 ID 保持一致）
+    @staticmethod
+    def _get_chunk_id(chunk: Document) -> str:
+        file_path = chunk.metadata.get("file_path", chunk.metadata.get("source", "unknown"))
+        chunk_index = chunk.metadata.get("chunk_index", 0)
+        unique_str = f"{file_path}_{chunk_index}"
+        return hashlib.md5(unique_str.encode()).hexdigest()
     # 同步文件加载（供线程池调用）
     def _load_sync(self, file_path: Path):
         try:
@@ -75,26 +81,35 @@ class StreamDocumentLoader:
             THREAD_POOL, self._load_sync, file_path
         )
         return docs
-
-    # 单个文件完整流水线（加载 → 分块 → 入库）
+    @staticmethod
+    def _get_chunk_id(chunk: Document) -> str:
+        file_path = chunk.metadata.get("file_path", chunk.metadata.get("source", "unknown"))
+        chunk_index = chunk.metadata.get("chunk_index", 0)
+        unique_str = f"{file_path}_{chunk_index}"
+        return hashlib.md5(unique_str.encode()).hexdigest()
+    
     async def stream_load_one_file(self, file_path: Path, vector_store):
-        # 1. 检查是否需要更新
         if not self.state_mgr.need_update(file_path):
-            log.info(f"文件内容无变化，跳过：{file_path.name}")
+            log.info(f"文件无变化，跳过：{file_path.name}")
             return
         
         try:
-            # 2. 删除该文件的所有旧向量（如果存在）
-            await vector_store.delete_by_file(str(file_path))
+            # 1. 获取旧 chunk_id 并删除向量
+            old_chunk_ids = self.state_mgr.get_old_chunk_ids(file_path)
+            if old_chunk_ids:
+                await vector_store.delete_by_ids(old_chunk_ids)
+                log.info(f"已删除 {len(old_chunk_ids)} 个旧块: {file_path.name}")
             
-            # 3. 加载文档
+            # 2. 加载文档
             docs = await self.single_file_loader(file_path)
             if not docs:
+                # 如果加载失败（如文件损坏），不更新状态，避免丢失旧的记录
+                log.warning(f"加载文档失败，跳过更新: {file_path.name}")
                 return
             
-            # 4. 分块（原有逻辑）
+            # 3. 分块
             result = self.splitter.split_documents(docs)
-            if isinstance(result, tuple):
+            if isinstance(result, tuple) and len(result) >= 2:
                 chunks = result[0]
                 parent_map = result[1]
                 if parent_map:
@@ -102,68 +117,48 @@ class StreamDocumentLoader:
             else:
                 chunks = result
             
-            # 5. 入库
+            # 4. 入库（向量库）
             await vector_store.aadd_documents(chunks)
             
-            # 6. 更新状态
-            self.state_mgr.update_state(file_path)
-            log.info(f"✅【增量更新】{file_path.name} 已更新，共 {len(chunks)} 个块")
+            # 5. 记录新 chunk_id 到状态库
+            chunk_ids = [self._get_chunk_id(chunk) for chunk in chunks]
+            self.state_mgr.update_state(file_path, chunk_ids)
+            log.info(f"✅ 增量更新完成: {file_path.name}，共 {len(chunks)} 个块")
         except Exception as e:
-            log.error(f"❌ {file_path.name} 增量更新失败: {e}", exc_info=True)
-    @staticmethod
-    def get_deleted_files(
-        current_dir: Path,
-        recorded_paths: Set[str],
-        allowed_extensions: List[str]
-    ) -> List[Path]:
-        """
-        检测比当前目录中已删除的文件（相对于状态记录）。
-        
-        Args:
-            current_dir: 当前数据目录路径
-            recorded_paths: 状态文件中记录的所有文件路径（字符串形式）
-            allowed_extensions: 允许处理的文件扩展名列表，如 [".txt", ".pdf", ...]
-        
-        Returns:
-            已删除文件的 Path 对象列表
-        """
-        # 获取当前目录下所有符合扩展名的有效文件路径（字符串形式）
-        current_paths = {
-            str(f) for f in current_dir.iterdir()
-            if f.is_file() and f.suffix in allowed_extensions
-        }
-        
-        # 找出记录中存在但当前目录中已消失的路径
-        deleted_path_strs = recorded_paths - current_paths
-        
-        # 转换为 Path 对象返回
-        return [Path(p) for p in deleted_path_strs]
-    # 批量流式加载（并发执行所有文件）
+            log.error(f"处理失败 {file_path.name}: {e}", exc_info=True)
+    
     async def stream_dir_loader(self, dir_path: Path, vector_store):
-        # 1. 获取状态文件中记录的所有文件路径
-        recorded_paths = set(self.state_mgr.states.keys())
+        # 1. 获取当前目录下的有效文件
+        current_files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix in ALLOWED_EXTENSIONS]
+        current_paths = {str(f) for f in current_files}
         
-        # 2. 调用独立函数检测已删除文件
-        deleted_files = self.get_deleted_files(dir_path, recorded_paths, ALLOWED_EXTENSIONS)
+        # 2. 获取状态库中记录的所有文件路径
+        recorded_paths = self.state_mgr.get_all_file_paths()
         
-        # 3. 清理已删除文件
-        for del_path in deleted_files:
+        # 3. 处理已删除的文件
+        deleted_paths = recorded_paths - current_paths
+        for del_path_str in deleted_paths:
+            del_path = Path(del_path_str)
             try:
-                await vector_store.delete_by_file(str(del_path))
-                self.state_mgr.remove_state(del_path)
+                # 删除该文件的所有 chunk
+                old_ids = self.state_mgr.get_old_chunk_ids(del_path)
+                if old_ids:
+                    await vector_store.delete_by_ids(old_ids)
+                self.state_mgr.remove_document(del_path)
                 log.info(f"🗑️ 已清理被删除文件: {del_path.name}")
             except Exception as e:
                 log.error(f"清理失败 {del_path.name}: {e}")
         
-        # 4. 继续原有的增量更新流程（仅处理当前存在的文件）
-        current_files = [f for f in dir_path.iterdir() if f.is_file() and f.suffix in ALLOWED_EXTENSIONS]
+        # 4. 并发处理当前文件（新增/修改）
         tasks = [self.stream_load_one_file(f, vector_store) for f in current_files]
         await asyncio.gather(*tasks)
-        # 所有文件处理完后，保存累积的父块映射（如果是组合分块）
+        
+        # 5. 保存父块映射（如果是组合分块）
         if self.accumulated_parent_map:
             parent_map_path = BASE_DIR / "parent_cache.json"
+            import json
             with open(parent_map_path, "w", encoding="utf-8") as f:
                 json.dump(self.accumulated_parent_map, f, ensure_ascii=False, indent=2)
             log.info(f"父块映射已保存到 {parent_map_path} (共 {len(self.accumulated_parent_map)} 个父块)")
-
-        log.info("所有文件流式处理+入库全部完成")
+        
+        log.info("所有文件流式处理+入库完成")

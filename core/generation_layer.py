@@ -1,5 +1,6 @@
 """
 生成层：无幻觉生成+提示词工程+格式标准化+复杂问题处理
+通过AnswerGenerator类，可以生成答案，支持流式生成和非流式生成
 """
 from typing import List, Optional, AsyncIterator
 from pathlib import Path
@@ -10,11 +11,8 @@ from langchain_community.chat_models.tongyi import ChatTongyi
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from utils.context_format import format_context_with_parents
-from utils.thread_pool_manager import init_thread_pools
-from core.retriever_layer import RetrievalService
-from infrastructure.vector_store.async_chroma_vector import ChromaVector
 from config.settings import (
-    LLM_MODEL, LLM_TEMPERATURE, LLM_SEED, DASHSCOPE_API_KEY, SESSION_ID
+    LLM_MODEL, LLM_TEMPERATURE, LLM_SEED, DASHSCOPE_API_KEY
 )
 from logs.log_config import generation_layer_log as log
 from core.chat_history_factory import init_chat_history
@@ -110,20 +108,3 @@ class AnswerGenerator:
             chat_history.add_message(AIMessage(content=answer))
         print(f"AI回答:\n{answer}")
         return answer
-
-if __name__ =='__main__':
-    start = time.time()
-    import asyncio
-    init_thread_pools()
-    vector_store = ChromaVector()
-    chat_history = init_chat_history(session_id=SESSION_ID)
-    llm = ChatTongyi(model=LLM_MODEL, temperature=LLM_TEMPERATURE, seed=LLM_SEED,streaming=True)
-
-    retrieval_service = RetrievalService(vector_store, llm, chat_history)
-    question = "P99响应延迟多少合适"
-    docs,retriever_type =asyncio.run( retrieval_service.retrieve(question,use_context=False))
-    answer_generator = AnswerGenerator(llm)
-
-    ans =asyncio.run( answer_generator.generate(question,docs,session_id="user_001"))
-    end = time.time()-start
-    print(f"总耗时:{end}")

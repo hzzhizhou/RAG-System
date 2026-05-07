@@ -1,7 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import List, Optional, Tuple
-from modelscope import snapshot_download
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from utils.thread_pool_manager import get_thread_pool
@@ -115,21 +114,42 @@ class ChromaVector(BaseVectorStore):
         用于：API 高并发、批量文档异步入库
         """
         if not docs:
-            log.warning("无文档需要异步加载，跳过")
             return
 
         loop = asyncio.get_running_loop()
         total = len(docs)
+        
+        # 准备数据
+        ids = [doc.metadata.get("id") for doc in docs]
+        texts = [doc.page_content for doc in docs]
+        metadatas = [doc.metadata for doc in docs]
+        
+        # 生成 embeddings（同步方法，放入线程池）
+        embeddings = await loop.run_in_executor(
+            None,
+            self.embedding_model.embed_documents,
+            texts
+        )
+        
+        # 分批 upsert
         for i in range(0, total, batch_size):
-            batch = docs[i:i+batch_size]
-            try:
-                # 调用同步方法 add_documents，放到线程池执行
-                await loop.run_in_executor(self._executor, self.vector_store.add_documents, batch)
-                log.info(f"【异步】Chroma 入库批次 {i//batch_size + 1}/{(total-1)//batch_size + 1}，共 {len(batch)} 个块")
-            except Exception as e:
-                log.error(f"【异步】批次 {i//batch_size + 1} 入库失败: {e}", exc_info=True)
-                raise
-        log.info(f"【异步】Chroma 入库完成，总计 {total} 个块")
+            batch_ids = ids[i:i+batch_size]
+            batch_embeddings = embeddings[i:i+batch_size]
+            batch_metadatas = metadatas[i:i+batch_size]
+            batch_texts = texts[i:i+batch_size]
+            
+            await loop.run_in_executor(
+                self._executor,
+                lambda: self.vector_store._collection.upsert(
+                    ids=batch_ids,
+                    embeddings=batch_embeddings,
+                    metadatas=batch_metadatas,
+                    documents=batch_texts
+                )
+            )
+            log.info(f"【异步】入库批次 {i//batch_size + 1}/{(total-1)//batch_size + 1} 完成，共 {len(batch_ids)} 个块")
+        
+        log.info(f"【异步】Chroma upsert 完成，总计 {total} 个块")
 
     async def asimilarity_search(self, query: str, k: int = 3, filter: Optional[dict] = None) -> List[Document]:
         """✅ 异步相似度检索（通过线程池执行同步的 similarity_search）"""
@@ -180,3 +200,32 @@ class ChromaVector(BaseVectorStore):
         except Exception as e:
             log.error(f"【异步】向量数据库清除失败{e}", exc_info=True)
             raise
+
+    async def delete_by_file(self, file_path: str):
+        """异步删除指定文件的所有向量（基于 metadata 中的 file_path）"""
+        loop = asyncio.get_running_loop()
+        try:
+            # Chroma 的 delete 支持 where 条件
+            await loop.run_in_executor(
+                self._executor,
+                lambda: self.vector_store._collection.delete(where={"file_path": file_path})
+            )
+            log.info(f"已删除文件 {file_path} 的旧向量")
+        except Exception as e:
+            log.error(f"删除文件 {file_path} 向量失败: {e}")
+
+    async def delete_by_ids(self, ids: List[str]):
+        """批量删除指定 ID 的向量（Chroma 原生支持）"""
+        if not ids:
+            return
+
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(
+                self._executor,
+                lambda: self.vector_store._collection.delete(ids=ids)
+            )
+            log.info(f"已删除 {len(ids)} 个向量")
+        except Exception as e:
+            log.error(f"批量删除向量失败: {e}")
+            # 不抛出，避免中断整个流程

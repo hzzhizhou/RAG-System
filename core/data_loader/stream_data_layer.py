@@ -13,10 +13,9 @@ class DataLayer:
     @staticmethod
     async def data_loader(file_path):
         try:
-            # 初始化向量库（清空一次）
             vector = ChromaVector()
-            await vector.aclear()
-            log.info("向量库已清空，准备流式入库")
+            # await vector.aclear()
+            # log.info("向量库已清空，准备流式入库")
 
             loader = StreamDocumentLoader()
             start_time = time.time()

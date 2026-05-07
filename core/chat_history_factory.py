@@ -27,7 +27,7 @@ if __name__=='__main__':
         ("human", "doaghih")
     ]
 
-    redis_chat_history = init_chat_history("user_012")
+    redis_chat_history = init_chat_history("user_001")
     # 逐个添加并转换
     # redis_chat_history.clear()
     print(redis_chat_history.messages())

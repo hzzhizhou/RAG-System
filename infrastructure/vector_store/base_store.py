@@ -52,3 +52,7 @@ class BaseVectorStore(ABC):
     @abstractmethod
     async def aclear(self) -> None:
         pass
+
+    @abstractmethod
+    async def delete_by_file(self, file_path: str):
+        pass
